@@ -74,21 +74,26 @@ export default function ProfilePage() {
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm ${
-            toast.ok ? "bg-green-600" : "bg-red-600"
+          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg border font-mono text-sm ${
+            toast.ok
+              ? "bg-orange-500/20 border-cyan-400/60 text-orange-300"
+              : "bg-red-500/20 border-red-400/60 text-red-300"
           }`}
         >
           {toast.msg}
         </div>
       )}
 
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">My Profile</h1>
+      <div className="flex items-center gap-3 mb-8">
+        <span className="block w-1 h-7 bg-orange-400 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+        <h1 className="text-xl font-bold text-white uppercase tracking-widest">My Profile</h1>
+      </div>
 
       <div className="max-w-lg">
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <div className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-white/50 mb-1.5">
                 Full Name
               </label>
               <input
@@ -97,12 +102,12 @@ export default function ProfilePage() {
                 value={form.fullName ?? ""}
                 onChange={handleChange}
                 placeholder="Enter your full name"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-white/50 mb-1.5">
                 Phone Number
               </label>
               <input
@@ -111,12 +116,12 @@ export default function ProfilePage() {
                 value={form.phone ?? ""}
                 onChange={handleChange}
                 placeholder="Enter your phone number"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-white/50 mb-1.5">
                 Delivery Address
               </label>
               <textarea
@@ -125,14 +130,14 @@ export default function ProfilePage() {
                 onChange={handleChange}
                 placeholder="Enter your delivery address"
                 rows={3}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent resize-none transition"
               />
             </div>
 
             <button
               type="submit"
               disabled={saving}
-              className="w-full rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+              className="w-full rounded-lg bg-orange-500 px-6 py-3 text-sm font-semibold text-white uppercase tracking-widest hover:bg-orange-400 shadow-[0_0_16px_rgba(6,182,212,0.35)] hover:shadow-[0_0_24px_rgba(6,182,212,0.55)] disabled:bg-white/10 disabled:text-white/30 disabled:shadow-none disabled:cursor-not-allowed transition-all"
             >
               {saving ? "Saving..." : "Save Profile"}
             </button>

@@ -45,14 +45,14 @@ export default function RegisterForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
           {error}
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Username <span className="text-red-500">*</span>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+          Username <span className="text-orange-500">*</span>
         </label>
         <input
           type="text"
@@ -61,13 +61,13 @@ export default function RegisterForm() {
           value={form.username}
           onChange={handleChange}
           placeholder="Choose a username"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Email <span className="text-red-500">*</span>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+          Email <span className="text-orange-500">*</span>
         </label>
         <input
           type="email"
@@ -76,12 +76,12 @@ export default function RegisterForm() {
           value={form.email}
           onChange={handleChange}
           placeholder="your@email.com"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
           Full Name
         </label>
         <input
@@ -90,13 +90,13 @@ export default function RegisterForm() {
           value={form.name}
           onChange={handleChange}
           placeholder="Your full name (optional)"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Password <span className="text-red-500">*</span>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+          Password <span className="text-orange-500">*</span>
         </label>
         <input
           type="password"
@@ -105,14 +105,14 @@ export default function RegisterForm() {
           value={form.password}
           onChange={handleChange}
           placeholder="Create a password"
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition"
         />
       </div>
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-[0_0_16px_rgba(6,182,212,0.4)] hover:shadow-[0_0_24px_rgba(6,182,212,0.6)]"
       >
         {loading ? "Creating account..." : "Create Account"}
       </button>

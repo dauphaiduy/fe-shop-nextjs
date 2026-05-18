@@ -12,12 +12,12 @@ import EmptyState from "@/components/common/empty-state";
 const LIMIT = 10;
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
-  PENDING: "bg-yellow-50 text-yellow-700 border-yellow-200",
-  CONFIRMED: "bg-blue-50 text-blue-700 border-blue-200",
-  SHIPPED: "bg-purple-50 text-purple-700 border-purple-200",
-  DELIVERED: "bg-green-50 text-green-700 border-green-200",
-  CANCELLED: "bg-gray-50 text-gray-600 border-gray-200",
-  REFUNDED: "bg-red-50 text-red-600 border-red-200",
+  PENDING: "bg-yellow-400/10 text-yellow-300 border-yellow-400/40",
+  CONFIRMED: "bg-orange-400/10 text-orange-300 border-cyan-400/40",
+  SHIPPED: "bg-purple-400/10 text-purple-300 border-purple-400/40",
+  DELIVERED: "bg-emerald-400/10 text-emerald-300 border-emerald-400/40",
+  CANCELLED: "bg-white/5 text-white/40 border-white/10",
+  REFUNDED: "bg-red-400/10 text-red-300 border-red-400/40",
 };
 
 export default function OrdersPage() {
@@ -36,17 +36,20 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">My Orders</h1>
+      <div className="flex items-center gap-3 mb-8">
+        <span className="block w-1 h-7 bg-orange-400 rounded-full shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+        <h1 className="text-xl font-bold text-white uppercase tracking-widest">My Orders</h1>
+      </div>
 
       {loading ? (
         <Loading />
       ) : !orders?.items.length ? (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-12">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-12">
           <EmptyState title="No orders yet" description="Your orders will appear here after checkout." />
           <div className="flex justify-center mt-6">
             <Link
               href="/products"
-              className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+              className="rounded-lg bg-orange-500 px-6 py-2.5 text-sm font-semibold text-white hover:bg-orange-400 shadow-[0_0_16px_rgba(6,182,212,0.35)] transition-all uppercase tracking-wider"
             >
               Browse Products
             </Link>
@@ -58,37 +61,37 @@ export default function OrdersPage() {
             {orders.items.map((order) => (
               <div
                 key={order.id}
-                className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
+                className="rounded-xl border border-white/10 bg-white/5 backdrop-blur-sm p-5 hover:border-cyan-400/30 hover:shadow-[0_0_16px_rgba(6,182,212,0.1)] transition-all"
               >
                 <div className="flex items-start justify-between flex-wrap gap-3">
                   <div>
                     <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-sm font-medium text-gray-900">
+                      <span className="text-sm font-mono font-medium text-white/80">
                         Order #{order.id}
                       </span>
                       <span
-                        className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full border ${
-                          STATUS_STYLES[order.status] ?? "bg-gray-50 text-gray-600 border-gray-200"
+                        className={`inline-block text-xs font-semibold px-2 py-0.5 rounded border uppercase tracking-wider ${
+                          STATUS_STYLES[order.status] ?? "bg-white/5 text-white/40 border-white/10"
                         }`}
                       >
                         {order.status}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-white/30 font-mono mt-1">
                       {formatDateTime(order.createdAt)}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1.5">
+                    <p className="text-xs text-white/40 mt-1.5">
                       {order.items.length} item{order.items.length !== 1 ? "s" : ""}
                     </p>
                   </div>
 
                   <div className="flex items-start flex-col gap-2 text-right">
-                    <span className="text-lg font-bold text-blue-600">
+                    <span className="text-lg font-bold text-orange-400 font-mono">
                       {formatPrice(order.totalAmount)}
                     </span>
                     <Link
                       href={`/orders/${order.id}`}
-                      className="text-xs text-blue-600 hover:text-blue-700 font-medium underline-offset-2 hover:underline"
+                      className="text-xs text-orange-400/70 hover:text-orange-300 font-medium transition uppercase tracking-wider"
                     >
                       View Details →
                     </Link>
@@ -97,7 +100,7 @@ export default function OrdersPage() {
 
                 {/* Item previews */}
                 {order.items.length > 0 && (
-                  <div className="mt-3 pt-3 border-t border-gray-50 text-xs text-gray-500">
+                  <div className="mt-3 pt-3 border-t border-white/5 text-xs text-white/30">
                     {order.items
                       .slice(0, 3)
                       .map((item) => item.product?.name ?? `Product #${item.productId}`)
@@ -111,21 +114,21 @@ export default function OrdersPage() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-2">
+            <div className="mt-10 flex items-center justify-center gap-3">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm rounded-lg border border-white/10 text-white/70 hover:border-cyan-400/60 hover:text-orange-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
               >
                 Previous
               </button>
-              <span className="text-sm text-gray-600">
-                Page {page} of {totalPages}
+              <span className="text-sm text-white/40 font-mono">
+                {page} / {totalPages}
               </span>
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm rounded-lg border border-white/10 text-white/70 hover:border-cyan-400/60 hover:text-orange-300 disabled:opacity-30 disabled:cursor-not-allowed transition"
               >
                 Next
               </button>
