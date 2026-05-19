@@ -71,10 +71,10 @@ export default function CartPage() {
   const handleCheckout = async () => {
     setCheckingOut(true);
     try {
-      await orderService.checkout();
-      showToast("Order placed successfully!", true);
+      const res = await orderService.checkout();
+      showToast("Order placed! Redirecting to payment...", true);
       loadCount();
-      setTimeout(() => router.push("/orders"), 1200);
+      setTimeout(() => router.push(`/orders/${res.data.id}`), 1000);
     } catch (err: unknown) {
       showToast(
         (err as { message?: string })?.message ?? "Checkout failed.",
@@ -141,6 +141,7 @@ export default function CartPage() {
                       alt={item.product?.name ?? ""}
                       fill
                       unoptimized
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                       className="object-cover"
                     />
                   ) : (

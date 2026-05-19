@@ -7,6 +7,7 @@ import { orderService } from "@/services/order.service";
 import { formatDateTime, formatPrice } from "@/utils/helpers";
 import type { Order, OrderStatus } from "@/types/order";
 import Loading from "@/components/common/loading";
+import PaymentModal from "@/modules/payment/components/payment-modal";
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
   PENDING: "bg-yellow-400/10 text-yellow-300 border-yellow-400/40",
@@ -22,6 +23,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   const showToast = (msg: string, ok: boolean) => {
@@ -161,13 +163,21 @@ export default function OrderDetailPage() {
             </div>
 
             {order.status === "PENDING" && (
-              <button
-                onClick={handleCancel}
-                disabled={cancelling}
-                className="mt-5 w-full rounded-lg border border-red-400/40 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed transition uppercase tracking-wider"
-              >
-                {cancelling ? "Cancelling..." : "Cancel Order"}
-              </button>
+              <div className="mt-5 space-y-2">
+                <button
+                  onClick={() => setShowPayment(true)}
+                  className="w-full rounded-lg bg-orange-500 hover:bg-orange-400 px-4 py-2.5 text-sm font-bold text-white uppercase tracking-widest shadow-[0_0_16px_rgba(251,146,60,0.3)] transition-all"
+                >
+                  Pay Now →
+                </button>
+                <button
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  className="w-full rounded-lg border border-red-400/40 bg-red-400/10 px-4 py-2 text-sm font-semibold text-red-300 hover:bg-red-400/20 disabled:opacity-50 disabled:cursor-not-allowed transition uppercase tracking-wider"
+                >
+                  {cancelling ? "Cancelling..." : "Cancel Order"}
+                </button>
+              </div>
             )}
 
             <Link
@@ -179,6 +189,19 @@ export default function OrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {showPayment && order && (
+        <PaymentModal
+          orderId={order.id}
+          totalAmount={order.totalAmount}
+          onClose={() => setShowPayment(false)}
+          onPaymentSuccess={() => {
+            setShowPayment(false);
+            setOrder((prev) => prev ? { ...prev, status: "CONFIRMED" } : prev);
+            showToast("Payment confirmed! Order is now processing.", true);
+          }}
+        />
+      )}
     </div>
   );
 }

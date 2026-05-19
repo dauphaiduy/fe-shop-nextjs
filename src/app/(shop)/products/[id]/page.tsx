@@ -111,6 +111,7 @@ export default function ProductDetailPage() {
                   src={images[selectedImage]}
                   alt={product.name}
                   fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                   unoptimized
                   className="object-contain"
                 />
@@ -151,6 +152,7 @@ export default function ProductDetailPage() {
                       src={img}
                       alt=""
                       fill
+                      sizes="64px"
                       unoptimized
                       className="object-cover"
                     />

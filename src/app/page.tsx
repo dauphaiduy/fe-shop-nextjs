@@ -38,7 +38,7 @@ export default function HomePage() {
           {/* Background video */}
           <video
             className="absolute inset-0 w-full h-full object-cover"
-            src="/nice.mp4"
+            src="/hero.mp4"
             autoPlay
             loop
             muted
@@ -172,6 +172,7 @@ export default function HomePage() {
                         src={product.images[0]}
                         alt={product.name}
                         fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
                         className="object-cover group-hover:scale-105 transition duration-300 opacity-90"
                       />
                     ) : (

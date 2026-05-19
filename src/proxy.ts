@@ -10,7 +10,8 @@ export default auth((req) => {
   const isProtected =
     pathname.startsWith("/cart") ||
     pathname.startsWith("/orders") ||
-    pathname.startsWith("/profile");
+    pathname.startsWith("/profile") ||
+    pathname.startsWith("/payment");
 
   if (isProtected && !isLoggedIn) {
     return NextResponse.redirect(new URL("/login", req.nextUrl));

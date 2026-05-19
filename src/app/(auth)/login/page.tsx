@@ -16,18 +16,18 @@ export default function LoginPage() {
           className="absolute inset-0 w-full h-full object-cover opacity-80"
         />
         {/* Cyber overlay */}
-        <div className="absolute inset-0 bg-linear-to-r from-[#0d0d1a] via-transparent to-transparent" />
-        <div className="absolute inset-0 bg-linear-to-t from-[#0d0d1a]/80 via-transparent to-transparent" />
+        {/* <div className="absolute inset-0 bg-linear-to-r from-[#0d0d1a] via-transparent to-transparent" /> */}
+        {/* <div className="absolute inset-0 bg-linear-to-t from-[#0d0d1a]/80 via-transparent to-transparent" /> */}
 
         {/* Neon grid lines */}
-        <div
+        {/* <div
           className="absolute inset-0 opacity-10"
           style={{
             backgroundImage:
               "linear-gradient(cyan 1px, transparent 1px), linear-gradient(90deg, cyan 1px, transparent 1px)",
             backgroundSize: "48px 48px",
           }}
-        />
+        /> */}
 
         {/* Text over image */}
         <div className="absolute bottom-12 left-10 right-10">

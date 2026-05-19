@@ -5,6 +5,7 @@ export const ROUTES = {
   CART: "/cart",
   ORDERS: "/orders",
   PROFILE: "/profile",
+  PAYMENT_RESULT: "/payment/result",
 } as const;
 
 export const DEFAULT_PAGE = 1;

@@ -19,13 +19,16 @@
    - [Customer Profile](#customer-profile)
    - [Cart](#cart)
    - [Orders](#orders)
-7. [Shopping Flow](#shopping-flow)
-8. [Standard Response Format](#standard-response-format)
-9. [Authentication & Authorization](#authentication--authorization)
-10. [Global Providers](#global-providers)
-11. [Data Layer — Queries & Repositories](#data-layer--queries--repositories)
-12. [Running the Application](#running-the-application)
-13. [Docker](#docker)
+   - [Payments](#payments)
+7. [Full Shopping & Payment Flow](#full-shopping--payment-flow)
+8. [Payment Gateway — SePay (Bank Transfer QR)](#payment-gateway--sepay-bank-transfer-qr)
+9. [WebSocket — Real-time Payment Status](#websocket--real-time-payment-status)
+10. [Standard Response Format](#standard-response-format)
+11. [Authentication & Authorization](#authentication--authorization)
+12. [Global Providers](#global-providers)
+13. [Data Layer — Queries & Repositories](#data-layer--queries--repositories)
+14. [Running the Application](#running-the-application)
+15. [Docker](#docker)
 
 ---
 
@@ -41,7 +44,9 @@ A RESTful NestJS API providing:
 - Automatic audit logging for every request/response
 - Dashboard analytics (summary counts, recent logs, user registration trend)
 - Product catalogue management with category organisation — public read access
-- **Shopping flow** — cart management, atomic checkout with stock reservation, order lifecycle state machine, and abandoned-order auto-release scheduler
+- **Shopping flow** — cart management, atomic checkout with stock reservation, order lifecycle state machine, abandoned-order auto-release scheduler
+- **Payment flow** — multi-provider gateway adapter (SePay, MoMo, ZaloPay, VNPay), webhook handling with idempotency, transaction lifecycle, refund support
+- **Real-time payment updates** — Socket.IO WebSocket gateway pushes `payment:pending`, `payment:success`, and `payment:failed` events to subscribed clients
 - Standardised API response envelope and global exception handling
 
 ---
@@ -57,6 +62,9 @@ A RESTful NestJS API providing:
 | Auth | JWT (`@nestjs/jwt`) |
 | Validation | `class-validator` + `class-transformer` |
 | Password hashing | `bcrypt` |
+| Scheduler | `@nestjs/schedule` |
+| WebSocket | `@nestjs/websockets` + `socket.io` |
+| Tunnel (dev) | ngrok |
 | Runtime | Node.js 22 |
 | Container | Docker + Docker Compose |
 
@@ -66,36 +74,36 @@ A RESTful NestJS API providing:
 
 ```
 src/
-├── main.ts                        Entry point — bootstraps app with ValidationPipe and global prefix
-├── app.module.ts                  Root module — registers all feature modules and global providers
+├── main.ts                        Entry point — ValidationPipe, CORS, global prefix
+├── app.module.ts                  Root module — all feature modules + global providers
 ├── config/
 │   └── config.ts                  Config factories: app, database, jwt
 │
 ├── common/
 │   ├── decorators/
-│   │   ├── public.decorator.ts    @Public() — skip auth
-│   │   ├── permission.decorator.ts @Permissions() — declare required permissions
-│   │   └── current-user.decorator.ts @CurrentUser() — inject req.user
+│   │   ├── public.decorator.ts        @Public() — skip auth guard
+│   │   ├── permission.decorator.ts    @Permissions() — declare required permissions
+│   │   └── current-user.decorator.ts  @CurrentUser() — inject req.user
 │   ├── filters/
-│   │   └── all-exceptions.filter.ts  Global exception filter — unified error responses
+│   │   └── all-exceptions.filter.ts   Global exception filter — unified error responses
 │   ├── guard/
-│   │   └── auth.guard.ts          Global auth + permission guard
+│   │   └── auth.guard.ts              Global auth + permission guard
 │   ├── interceptors/
 │   │   ├── transform.interceptor.ts   Wraps success responses in standard envelope
-│   │   └── audit-log.interceptor.ts   Records every request/response to audit_logs table
+│   │   └── audit-log.interceptor.ts   Records every request/response to audit_logs
 │   ├── middlewares/
 │   │   └── permission-val.middleware.ts  Attaches PermissionVal + AsyncLocalStorage context
 │   ├── models/
-│   │   └── permission-val.model.ts   Carries accessToken + permissions per request
+│   │   └── permission-val.model.ts    Carries accessToken + permissions per request
 │   ├── prisma/
-│   │   └── prisma.service.ts      Extended PrismaClient with auto createdBy/updatedBy
+│   │   └── prisma.service.ts          Extended PrismaClient
 │   ├── shared/
-│   │   ├── queries/               Read-only DB access (find, findOne, count)
-│   │   └── repositories/          Write DB access (create, update, delete)
+│   │   ├── queries/                   Read-only DB access (find, findOne, count)
+│   │   └── repositories/              Write DB access (create, update, delete)
 │   ├── storage/
-│   │   └── app.storage.ts         AsyncLocalStorage — per-request context propagation
+│   │   └── app.storage.ts             AsyncLocalStorage — per-request context propagation
 │   └── utils/
-│       └── hash.util.ts           hashPassword / comparePassword (bcrypt)
+│       └── hash.util.ts               hashPassword / comparePassword (bcrypt)
 │
 └── modules/
     ├── auth/               Login (shop + admin), Register
@@ -107,15 +115,20 @@ src/
     ├── category/           Category CRUD
     ├── product/            Product CRUD
     ├── customer-profile/   Customer self-service profile
-    ├── cart/               Cart management (findOrCreate, add/update/remove items)
-    └── order/              Checkout, order lifecycle, abandoned-order scheduler
+    ├── cart/               Cart management
+    ├── order/              Checkout, order lifecycle, abandoned-order scheduler
+    └── payment/
+        ├── dto/              CheckoutPaymentDto, QueryPaymentDto, RefundPaymentDto
+        ├── gateways/         PaymentGateway interface + SePay, MoMo, ZaloPay, VNPay adapters
+        ├── permissions/      PaymentPermissions class
+        ├── pipes/            ParsePaymentProviderPipe (case-insensitive enum)
+        ├── queues/           BullMQ processor stub (ready to activate)
+        └── payment.gateway.ts  Socket.IO WebSocket gateway — real-time payment events
 ```
 
 ---
 
 ## Environment Variables
-
-Copy `.env.example` to `.env` and fill in values.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -130,6 +143,9 @@ Copy `.env.example` to `.env` and fill in values.
 | `DATABASE_URL` | *(derived)* | Full Prisma connection string |
 | `JWT_SECRET` | `secret` | JWT signing secret — **change in production** |
 | `JWT_EXPIRES_IN` | `7d` | JWT expiry duration |
+| `NGROK_AUTHTOKEN` | `token` | ngrok auth token for webhook tunnelling |
+| `SEPAY_BANK` | — | Bank code used in SePay QR URL |
+| `SEPAY_ACCOUNT` | — | Bank account number for SePay QR |
 
 ---
 
@@ -139,824 +155,405 @@ Copy `.env.example` to `.env` and fill in values.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
+| `id` | `Int` PK | |
 | `email` | `String` unique | |
 | `username` | `String?` unique | |
 | `password` | `String?` | Null for OAuth accounts |
 | `name` | `String?` | |
 | `isActive` | `Boolean` | Default `false` |
 | `accountType` | `AccountType` | `LOCAL` \| `GOOGLE` \| `GITHUB` |
-| `userType` | `UserType` | `ADMIN` \| `STAFF` \| `CUSTOMER` — Default `CUSTOMER` |
-| `roleId` | `Int?` FK → `roles.id` | Null for `CUSTOMER` users (no RBAC) |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
-
-### `customer_profiles`
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
-| `userId` | `Int` unique FK → `users.id` | One-to-one with user |
-| `fullName` | `String?` | |
-| `phone` | `String?` | |
-| `address` | `String?` | |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
+| `userType` | `UserType` | `ADMIN` \| `STAFF` \| `CUSTOMER` |
+| `roleId` | `Int?` FK → `roles.id` | Null for `CUSTOMER` users |
 
 ### `roles`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
+| `id` | `Int` PK | |
 | `name` | `String` unique | |
-| `permissions` | `Json?` | Array of permission strings, e.g. `["user:read","role:read"]`. Use `["*"]` for admin |
+| `permissions` | `Json?` | Array of permission strings. `["*"]` = admin |
 | `description` | `String?` | |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
+
+### `customer_profiles`
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `Int` PK | |
+| `userId` | `Int` unique FK | One-to-one with user |
+| `fullName` | `String?` | |
+| `phone` | `String?` | |
+| `address` | `String?` | |
 
 ### `categories`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
+| `id` | `Int` PK | |
 | `name` | `String` unique | |
 | `description` | `String?` | |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
 
 ### `products`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
+| `id` | `Int` PK | |
 | `name` | `String` | |
-| `description` | `String?` | |
-| `price` | `Decimal(10,2)` | Non-negative |
+| `price` | `Decimal(10,2)` | |
 | `stock` | `Int` | Default `0` |
-| `status` | `ProductStatus` | `ACTIVE` \| `INACTIVE` — Default `ACTIVE` |
+| `status` | `ProductStatus` | `ACTIVE` \| `INACTIVE` |
 | `images` | `String[]` | Array of image URLs |
-| `categoryId` | `Int` FK → `categories.id` | |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
+| `categoryId` | `Int` FK | |
 
-### `carts`
+### `carts` / `cart_items`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
-| `userId` | `Int` FK → `users.id` | One active cart per user |
-| `status` | `CartStatus` | `ACTIVE` \| `ORDERED` \| `ABANDONED` — Default `ACTIVE` |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
+| `carts.status` | `CartStatus` | `ACTIVE` \| `ORDERED` \| `ABANDONED` |
+| `cart_items.cartId` | `Int` FK | |
+| `cart_items.productId` | `Int` FK | |
+| `cart_items.quantity` | `Int` | |
 
-### `cart_items`
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
-| `cartId` | `Int` FK → `carts.id` | |
-| `productId` | `Int` FK → `products.id` | |
-| `quantity` | `Int` | |
-
-Unique constraint on `(cartId, productId)` — upsert behaviour: adding the same product increments quantity.
-
-### `orders`
+### `orders` / `order_items`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
-| `userId` | `Int` FK → `users.id` | |
-| `status` | `OrderStatus` | See state machine below |
-| `totalAmount` | `Decimal(10,2)` | Snapshotted at checkout |
-| `createdAt` | `DateTime` | |
-| `updatedAt` | `DateTime` | |
+| `orders.status` | `OrderStatus` | `PENDING` → `CONFIRMED` → `SHIPPED` → `DELIVERED` \| `CANCELLED` \| `REFUNDED` |
+| `orders.totalAmount` | `Decimal(10,2)` | Snapshot at checkout |
+| `order_items.priceAtTime` | `Decimal(10,2)` | Price snapshot |
 
-### `order_items`
+### `payment_transactions`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
+| `id` | `Int` PK | |
 | `orderId` | `Int` FK → `orders.id` | |
-| `productId` | `Int` FK → `products.id` | |
-| `quantity` | `Int` | |
-| `priceAtTime` | `Decimal(10,2)` | **Snapshot** — never references live product price |
+| `provider` | `PaymentProvider` | `MOMO` \| `ZALOPAY` \| `VNPAY` \| `SEPAY` |
+| `transactionId` | `String?` | Provider reference / our ref code |
+| `amount` | `Decimal(12,2)` | |
+| `status` | `PaymentStatus` | `PENDING` → `PROCESSING` → `SUCCESS` \| `FAILED` \| `EXPIRED` \| `CANCELLED` \| `REFUNDED` |
+| `rawRequest` | `Json?` | Gateway request payload snapshot |
+| `rawResponse` | `Json?` | Gateway response snapshot |
+| `callbackPayload` | `Json?` | Raw webhook payload from gateway |
 
 ### `audit_logs`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `Int` PK | Auto-increment |
-| `userId` | `Int?` | Null for anonymous requests |
-| `action` | `String` | HTTP method: GET, POST, PATCH, DELETE |
-| `resource` | `String` | URL path without query string |
-| `resourceId` | `String?` | ID segment extracted from URL |
-| `statusCode` | `Int?` | HTTP response status |
-| `ipAddress` | `String?` | Client IP (honours X-Forwarded-For) |
-| `userAgent` | `String?` | |
-| `metadata` | `Json?` | Sanitised request + response body |
-| `createdAt` | `DateTime` | |
+| `id` | `Int` PK | |
+| `userId` | `Int?` | |
+| `action` | `String` | HTTP method |
+| `resource` | `String` | URL path |
+| `statusCode` | `Int?` | |
+| `ipAddress` | `String?` | |
+| `metadata` | `Json?` | Extra info |
 
 ---
 
 ## API Reference
 
-All routes are prefixed with `/v1` unless overridden by `API_PREFIX`.
-
-Requests to protected endpoints must include:
-```
-Authorization: Bearer <accessToken>
-```
-
----
+All endpoints are prefixed with `/v1`. Authenticated routes require `Authorization: Bearer <token>`.
 
 ### Auth
 
-#### `POST /v1/auth/login` — Public
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/register` | Public | Register new customer account |
+| `POST` | `/auth/login` | Public | Customer login → JWT |
+| `POST` | `/auth/admin/login` | Public | Admin/Staff login → JWT |
 
-Shop page login. Only `CUSTOMER` accounts are accepted.
+```bash
+# Register
+curl -X POST /v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{ "email": "user@test.com", "password": "Pass1234!", "name": "Test User" }'
 
-**Request body:**
-```json
-{ "username": "alice", "password": "my-password" }
+# Login
+curl -X POST /v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{ "email": "user@test.com", "password": "Pass1234!" }'
 ```
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": { "accessToken": "eyJ..." },
-  "timestamp": "2026-05-08T00:00:00.000Z"
-}
-```
-
-**Errors:** `400` validation, `401` invalid credentials or non-customer account.
-
----
-
-#### `POST /v1/auth/admin/login` — Public
-
-Admin panel login. Only `ADMIN` and `STAFF` accounts are accepted.
-
-**Request body:**
-```json
-{ "username": "admin", "password": "admin-password" }
-```
-
-**Response `200`:** Same as shop login — returns `{ accessToken }`.
-
-The issued JWT will contain the user's RBAC `permissions` array.
-
-**Errors:** `400` validation, `401` invalid credentials or customer account.
-
----
-
-#### `POST /v1/auth/register` — Public
-
-Register a new **customer** account (shop page only). Admin/staff accounts cannot be self-registered.
-
-**Request body:**
-```json
-{
-  "username": "alice",
-  "email": "alice@example.com",
-  "password": "my-password",
-  "name": "Alice"
-}
-```
-
-`accountType` is automatically set to `LOCAL`. `userType` is automatically set to `CUSTOMER`.
-
-**Response `200`:** Created user object.
-
-**Errors:** `400` validation, `401` username/email already exists.
 
 ---
 
 ### Users
 
-> Requires authentication.
-
-#### `POST /v1/user` — `user:create`
-
-Create a user.
-
-**Request body:**
-```json
-{
-  "email": "bob@example.com",
-  "username": "bob",
-  "password": "secret",
-  "name": "Bob",
-  "accountType": "LOCAL",
-  "roleId": 1
-}
-```
-
----
-
-#### `GET /v1/user` — `user:read`
-
-List users with pagination and filters.
-
-**Query parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `email` | string | Case-insensitive partial match |
-| `username` | string | Case-insensitive partial match |
-| `name` | string | Case-insensitive partial match |
-| `isActive` | boolean | Filter by active state |
-| `accountType` | enum | `LOCAL` \| `GOOGLE` \| `GITHUB` |
-| `userType` | enum | `ADMIN` \| `STAFF` \| `CUSTOMER` |
-| `roleId` | number | Filter by role |
-| `page` | number | Default `1` |
-| `limit` | number | Default `10` |
-
-**Response:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "items": [ { "id": 1, "email": "...", ... } ],
-    "total": 42,
-    "page": 1,
-    "limit": 10
-  },
-  "timestamp": "..."
-}
-```
-
----
-
-#### `PATCH /v1/user/:id` — `user:update`
-
-Update a user by ID. All fields are optional.
+| Method | Path | Permission | Description |
+|--------|------|-----------|-------------|
+| `GET` | `/users` | `user:read` | List users |
+| `GET` | `/users/:id` | `user:read` | Get user by id |
+| `POST` | `/users` | `user:create` | Create user |
+| `PATCH` | `/users/:id` | `user:update` | Update user |
+| `DELETE` | `/users/:id` | `user:delete` | Delete user |
 
 ---
 
 ### Roles
 
-> Requires authentication.
+| Method | Path | Permission | Description |
+|--------|------|-----------|-------------|
+| `GET` | `/roles` | `role:read` | List roles |
+| `GET` | `/roles/:id` | `role:read` | Get role |
+| `POST` | `/roles` | `role:create` | Create role |
+| `PATCH` | `/roles/:id` | `role:update` | Update role |
+| `DELETE` | `/roles/:id` | `role:delete` | Delete role |
 
-#### `POST /v1/roles`
-
-Create a role.
-
-```json
-{
-  "name": "editor",
-  "description": "Can read and update users",
-  "permissions": ["user:read", "user:update"]
-}
+```bash
+# Create admin role
+curl -X POST /v1/roles \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{ "name": "superadmin", "permissions": ["*"], "description": "Full access" }'
 ```
-
-To create a superadmin role: `"permissions": ["*"]`
-
----
-
-#### `GET /v1/roles`
-
-List all roles.
-
----
-
-#### `GET /v1/roles/:id`
-
-Get a single role by ID.
-
----
-
-#### `PATCH /v1/roles/:id`
-
-Update a role.
-
----
-
-#### `DELETE /v1/roles/:id`
-
-Delete a role.
 
 ---
 
 ### Permissions
 
-> Requires authentication.
-
-#### `GET /v1/permissions`
-
-Returns all permission strings registered in the system at startup.
-
-**Response:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "user:create": "Create user",
-    "user:read": "Read user",
-    "user:update": "Update user",
-    "user:delete": "Delete user",
-    "role:create": "Create role",
-    "role:read": "Read role",
-    "role:update": "Update role",
-    "role:delete": "Delete role",
-    "audit-log:read": "Read audit log",
-    "dashboard:read": "Read dashboard",
-    "category:create": "Create category",
-    "category:read": "Read category",
-    "category:update": "Update category",
-    "category:delete": "Delete category",
-    "product:create": "Create product",
-    "product:read": "Read product",
-    "product:update": "Update product",
-    "product:delete": "Delete product",
-    "cart:read": "Read cart",
-    "cart:write": "Write cart",
-    "order:read": "Read own orders",
-    "order:read_all": "Read all orders",
-    "order:update_status": "Update order status",
-    "order:cancel": "Cancel order",
-    "order:refund": "Refund order"
-  },
-  "timestamp": "..."
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/permissions` | JWT | List all registered permission strings |
 
 ---
 
 ### Audit Log
 
-> Requires `audit-log:read`.
-
-#### `GET /v1/audit-log`
-
-Query audit logs with filters and pagination.
-
-**Query parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `userId` | number | Filter by user |
-| `action` | string | HTTP method (case-insensitive partial match) |
-| `resource` | string | URL path (case-insensitive partial match) |
-| `statusCode` | number | HTTP status code |
-| `from` | ISO date | Start of date range (`createdAt >= from`) |
-| `to` | ISO date | End of date range (`createdAt <= to`) |
-| `page` | number | Default `1` |
-| `limit` | number | Default `20` |
-
-**Response:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "items": [ { "id": 1, "action": "POST", "resource": "/v1/auth/login", ... } ],
-    "total": 150,
-    "page": 1,
-    "limit": 20
-  },
-  "timestamp": "..."
-}
-```
+| Method | Path | Permission | Description |
+|--------|------|-----------|-------------|
+| `GET` | `/audit-log` | `audit-log:read` | Query audit logs (paginated) |
 
 ---
 
 ### Dashboard
 
-> Requires `dashboard:read`.
-
-#### `GET /v1/dashboard/summary`
-
-Returns top-level counts.
-
-```json
-{
-  "data": {
-    "totalUsers": 120,
-    "activeUsers": 95,
-    "inactiveUsers": 25,
-    "totalRoles": 5,
-    "totalAuditLogs": 3200
-  }
-}
-```
-
----
-
-#### `GET /v1/dashboard/recent-logs?limit=10`
-
-Returns the most recent audit log entries.
-
----
-
-#### `GET /v1/dashboard/user-trend?days=7`
-
-Returns daily user registration counts for the past N days.
-
-```json
-{
-  "data": [
-    { "date": "2026-05-02", "count": 3 },
-    { "date": "2026-05-03", "count": 7 },
-    ...
-  ]
-}
-```
+| Method | Path | Permission | Description |
+|--------|------|-----------|-------------|
+| `GET` | `/dashboard` | `dashboard:read` | Summary counts, recent logs, registration trend |
 
 ---
 
 ### Categories
 
-#### `POST /v1/categories` — `category:create`
-
-> Requires authentication + `category:create` permission.
-
-Create a new category.
-
-**Request body:**
-```json
-{
-  "name": "Electronics",
-  "description": "Electronic devices and accessories"
-}
-```
-
----
-
-#### `GET /v1/categories` — Public
-
-List all categories. No authentication required.
-
----
-
-#### `GET /v1/categories/:id` — Public
-
-Get a single category by ID. No authentication required.
-
-**Errors:** `404` if not found.
-
----
-
-#### `PATCH /v1/categories/:id` — `category:update`
-
-Update a category. All fields are optional.
-
-**Errors:** `404` if not found.
-
----
-
-#### `DELETE /v1/categories/:id` — `category:delete`
-
-Delete a category by ID.
-
-**Errors:** `404` if not found, `400` if referenced by existing products (FK constraint).
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/categories` | Public | List categories |
+| `GET` | `/categories/:id` | Public | Get category |
+| `POST` | `/categories` | `category:create` | Create category |
+| `PATCH` | `/categories/:id` | `category:update` | Update category |
+| `DELETE` | `/categories/:id` | `category:delete` | Delete category |
 
 ---
 
 ### Products
 
-#### `POST /v1/products` — `product:create`
-
-> Requires authentication + `product:create` permission.
-
-Create a new product.
-
-**Request body:**
-```json
-{
-  "name": "Wireless Headphones",
-  "description": "Noise-cancelling over-ear headphones",
-  "price": 199.99,
-  "stock": 50,
-  "status": "ACTIVE",
-  "images": ["https://example.com/img1.jpg"],
-  "categoryId": 1
-}
-```
-
-`status` defaults to `ACTIVE` if omitted. `stock` defaults to `0`.
-
----
-
-#### `GET /v1/products` — Public
-
-List products with optional filters and pagination. No authentication required.
-
-**Query parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `name` | string | Case-insensitive partial match |
-| `status` | enum | `ACTIVE` \| `INACTIVE` |
-| `categoryId` | number | Filter by category |
-| `page` | number | Default `1` |
-| `limit` | number | Default `10` |
-
-**Response:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "items": [
-      {
-        "id": 1,
-        "name": "Wireless Headphones",
-        "price": "199.99",
-        "stock": 50,
-        "status": "ACTIVE",
-        "images": ["https://example.com/img1.jpg"],
-        "categoryId": 1,
-        "category": { "id": 1, "name": "Electronics" },
-        "createdAt": "2026-05-13T00:00:00.000Z",
-        "updatedAt": "2026-05-13T00:00:00.000Z"
-      }
-    ],
-    "total": 1,
-    "page": 1,
-    "limit": 10
-  },
-  "timestamp": "..."
-}
-```
-
----
-
-#### `GET /v1/products/:id` — Public
-
-Get a single product by ID. No authentication required. Includes the related `category` object.
-
-**Errors:** `404` if not found.
-
----
-
-#### `PATCH /v1/products/:id` — `product:update`
-
-Update a product. All fields are optional.
-
-**Errors:** `404` if not found.
-
----
-
-#### `DELETE /v1/products/:id` — `product:delete`
-
-Delete a product by ID.
-
-**Errors:** `404` if not found.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/products` | Public | List products (filter by category, status, search) |
+| `GET` | `/products/:id` | Public | Get product |
+| `POST` | `/products` | `product:create` | Create product |
+| `PATCH` | `/products/:id` | `product:update` | Update product |
+| `DELETE` | `/products/:id` | `product:delete` | Delete product |
 
 ---
 
 ### Customer Profile
 
-> Requires authentication (CUSTOMER JWT only). `ADMIN` / `STAFF` tokens are rejected with `403`.
-
-#### `GET /v1/customer/profile`
-
-Return the authenticated customer's profile.
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "id": 1,
-    "userId": 5,
-    "fullName": "Alice Smith",
-    "phone": "+1234567890",
-    "address": "123 Main St",
-    "createdAt": "2026-05-14T00:00:00.000Z",
-    "updatedAt": "2026-05-14T00:00:00.000Z"
-  },
-  "timestamp": "..."
-}
-```
-
-**Errors:** `403` non-customer token, `404` profile not yet created.
-
----
-
-#### `PUT /v1/customer/profile`
-
-Create or update the authenticated customer's profile (upsert). All fields are optional.
-
-**Request body:**
-```json
-{
-  "fullName": "Alice Smith",
-  "phone": "+1234567890",
-  "address": "123 Main St"
-}
-```
-
-**Response `200`:** Updated profile object.
-
-**Errors:** `403` non-customer token, `400` validation.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/customer/profile` | JWT | Get own profile |
+| `PUT` | `/customer/profile` | JWT | Update own profile |
 
 ---
 
 ### Cart
 
-> Requires authentication (any user type).
-
-A cart is **automatically created** on the first request — there is no explicit "create cart" endpoint.
-
-#### `GET /v1/cart`
-
-Return the authenticated user's active cart with all items (including product details). Creates an empty cart if none exists.
-
-**Response `200`:**
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "id": 1,
-    "userId": 5,
-    "status": "ACTIVE",
-    "items": [
-      {
-        "id": 3,
-        "cartId": 1,
-        "productId": 10,
-        "quantity": 2,
-        "product": { "id": 10, "name": "Wireless Headphones", "price": "199.99", "stock": 48 }
-      }
-    ],
-    "createdAt": "2026-05-14T00:00:00.000Z",
-    "updatedAt": "2026-05-14T00:00:00.000Z"
-  },
-  "timestamp": "..."
-}
-```
-
----
-
-#### `POST /v1/cart/items`
-
-Add a product to the cart. If the item already exists its quantity is incremented. Validates that the product has sufficient stock.
-
-**Request body:**
-```json
-{ "productId": 10, "quantity": 2 }
-```
-
-**Errors:** `404` product not found, `400` insufficient stock.
-
----
-
-#### `PATCH /v1/cart/items/:productId`
-
-Set the exact quantity for a cart item. Validates stock.
-
-**Request body:**
-```json
-{ "quantity": 3 }
-```
-
-**Errors:** `404` item not in cart, `400` insufficient stock.
-
----
-
-#### `DELETE /v1/cart/items/:productId`
-
-Remove a single item from the cart.
-
-**Errors:** `404` item not in cart.
-
----
-
-#### `DELETE /v1/cart`
-
-Remove all items from the active cart.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/cart` | JWT | Get active cart with items |
+| `POST` | `/cart/items` | JWT | Add item (creates cart if none) |
+| `PATCH` | `/cart/items/:productId` | JWT | Update item quantity |
+| `DELETE` | `/cart/items/:productId` | JWT | Remove item |
+| `DELETE` | `/cart` | JWT | Clear entire cart |
 
 ---
 
 ### Orders
 
-> Requires authentication.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/orders/checkout` | JWT | Create order from active cart (atomic stock deduction) |
+| `GET` | `/orders` | JWT | List orders — customers see own, staff/admin see all |
+| `GET` | `/orders/:id` | JWT | Get order detail |
+| `PATCH` | `/orders/:id/status` | `order:update_status` | Advance order status |
 
-#### `POST /v1/orders/checkout`
+**Order state machine:**
 
-Convert the active cart into an order. This is an **atomic transaction**:
-
-1. For every cart item: verifies stock and decrements it atomically (`updateMany` with `gte` check).
-2. Creates an `Order` with snapshotted `priceAtTime` per item.
-3. Marks the cart status as `ORDERED`.
-
-If any product runs out of stock mid-checkout the entire transaction is rolled back.
-
-**Response `201`:**
-```json
-{
-  "success": true,
-  "statusCode": 201,
-  "data": {
-    "id": 7,
-    "userId": 5,
-    "status": "PENDING",
-    "totalAmount": "399.98",
-    "items": [
-      {
-        "id": 1,
-        "orderId": 7,
-        "productId": 10,
-        "quantity": 2,
-        "priceAtTime": "199.99",
-        "product": { "id": 10, "name": "Wireless Headphones" }
-      }
-    ],
-    "createdAt": "2026-05-14T06:00:00.000Z",
-    "updatedAt": "2026-05-14T06:00:00.000Z"
-  },
-  "timestamp": "..."
-}
+```
+PENDING → CONFIRMED → SHIPPED → DELIVERED
+     ↘           ↘
+   CANCELLED    CANCELLED / REFUNDED
+                DELIVERED → REFUNDED
 ```
 
-**Errors:** `400` no active cart / cart is empty / insufficient stock.
+**Abandoned-order scheduler:** every 5 minutes, `PENDING` orders older than 15 minutes are cancelled and stock is restored.
 
 ---
 
-#### `GET /v1/orders`
+### Payments
 
-List orders with optional status filter and pagination.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/payments/checkout` | JWT | Initiate payment for an order |
+| `POST` | `/payments/webhook/:provider` | **Public** | Gateway webhook callback |
+| `GET` | `/payments/status/:orderId` | JWT | Query payment transactions for an order |
+| `POST` | `/payments/refund` | JWT | Refund a SUCCESS transaction |
 
-- `CUSTOMER` users see only their own orders.
-- `ADMIN` / `STAFF` see all orders.
+**Providers:** `SEPAY` \| `MOMO` \| `ZALOPAY` \| `VNPAY` (case-insensitive)
 
-**Query parameters:**
+```bash
+# Initiate payment
+curl -X POST /v1/payments/checkout \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "orderId": 42,
+    "provider": "SEPAY",
+    "returnUrl": "https://yourfrontend.com/payment/result"
+  }'
 
-| Param | Type | Description |
+# Webhook simulation
+curl -X POST /v1/payments/webhook/sepay \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": 99999,
+    "gateway": "VietcomBank",
+    "content": "THANHTOAN42",
+    "transferAmount": 200000,
+    "transferType": "in"
+  }'
+
+# Query status
+curl /v1/payments/status/42 \
+  -H 'Authorization: Bearer <token>'
+```
+
+---
+
+## Full Shopping & Payment Flow
+
+```
+1. POST /auth/register          → create account
+2. POST /auth/login             → get JWT
+3. GET  /products               → browse products
+4. POST /cart/items             → add items to cart
+5. POST /orders/checkout        → create order (stock deducted atomically)
+6. WS   connect /payment        → subscribe to payment:42 room
+7. POST /payments/checkout      → initiate payment → get QR / payment URL
+         └─ WS event: payment:pending  → frontend shows QR / spinner
+8.      [Customer pays]
+9. POST /payments/webhook/:provider  → gateway notifies server
+         └─ verifyCallback()    → validate signature / content match
+         └─ DB transaction      → PaymentTransaction.status = SUCCESS
+                                → Order.status = CONFIRMED
+         └─ WS event: payment:success → frontend redirects to confirmed page
+10. GET /payments/status/:id    → confirm SUCCESS (polling fallback)
+```
+
+---
+
+## Payment Gateway — SePay (Bank Transfer QR)
+
+SePay works differently from card gateways — no API call is needed to create a payment. Instead:
+
+1. **`createPayment`** — generates a reference code (`THANHTOAN{orderId}`), builds a QR URL, stores the ref code as `transactionId` in `payment_transactions`
+2. **Customer scans QR**, transfers money, and types the reference code in the transfer description
+3. **SePay fires a webhook** `POST /payments/webhook/sepay` with the transfer details
+4. **`verifyCallback`** — reads `payload.content` (what the customer typed) and matches it against DB `transactionId`
+5. **`handleWebhook`** — on match, marks transaction `SUCCESS` and order `CONFIRMED` atomically
+
+**Key SePay webhook fields:**
+
+| Field | Type | Description |
 |-------|------|-------------|
-| `status` | enum | Filter by `OrderStatus` |
-| `page` | number | Default `1` |
-| `limit` | number | Default `10` |
+| `content` | `string` | Customer transfer description — **must match ref code** |
+| `transferAmount` | `number` | Transfer amount in VND |
+| `transferType` | `string` | `in` = incoming transfer |
+| `gateway` | `string` | Bank name |
+| `referenceCode` | `string` | Bank's own reference |
+
+**Environment variables required:**
+
+```env
+SEPAY_BANK=VCB          # Bank code (e.g. VCB, TCB, MB)
+SEPAY_ACCOUNT=1234567890  # Your bank account number
+```
 
 ---
 
-#### `GET /v1/orders/:id`
+## WebSocket — Real-time Payment Status
 
-Get a single order by ID. Customers receive `403` if the order belongs to another user.
+The server exposes a Socket.IO namespace at `/payment` (same port as the HTTP server). Clients connect with a valid JWT and subscribe to a per-order room to receive live payment status updates.
 
-**Errors:** `404` not found, `403` access denied.
+### Connection
 
----
+```js
+import { io } from 'socket.io-client';
 
-#### `PATCH /v1/orders/:id/status`
-
-Transition an order through the state machine.
-
-**Request body:**
-```json
-{ "status": "CONFIRMED" }
+const socket = io('http://localhost:3000/payment', {
+  // Pass JWT in handshake auth OR Authorization header
+  auth: { token: 'Bearer <accessToken>' },
+});
 ```
 
-**Rules:**
+If the token is missing or invalid the server immediately disconnects the client.
 
-| Actor | Allowed transitions |
-|-------|--------------------|
-| Customer | `PENDING → CANCELLED` only |
-| Admin / Staff | Any valid transition (see state machine below) |
+### Subscribe to an order
 
-When transitioning to `CANCELLED`, stock is automatically restored inside a transaction.
+```js
+// Tell the server which order to watch
+socket.emit('subscribe_payment', { orderId: 42 });
 
-**Errors:** `400` invalid transition, `403` insufficient privilege, `404` not found.
-
----
-
-## Shopping Flow
-
-### End-to-end flow
-
-```
-User
- └─ Browse products      GET /v1/products
-      └─ Add to cart      POST /v1/cart/items
-           └─ View cart   GET /v1/cart
-                └─ Checkout  POST /v1/orders/checkout  ← atomic transaction
-                     └─ View orders  GET /v1/orders
-                          └─ (Payment — future)
+// Server acknowledges
+socket.on('subscribed', (data) => {
+  console.log(data); // { orderId: 42, room: 'payment:42' }
+});
 ```
 
-### Order Status State Machine
+### Incoming events
 
+| Event | When fired | Payload |
+|-------|-----------|--------|
+| `payment:pending` | Immediately after `POST /payments/checkout` succeeds | `{ orderId, transactionId, status: "PROCESSING", paymentUrl, qrCode, provider }` |
+| `payment:success` | After the gateway webhook confirms payment | `{ orderId, transactionId, status: "SUCCESS" }` |
+| `payment:failed` | After the gateway signals failure/cancellation | `{ orderId, transactionId, status: "FAILED" }` |
+
+### Full frontend example
+
+```js
+const socket = io('http://localhost:3000/payment', {
+  auth: { token: `Bearer ${accessToken}` },
+});
+
+socket.emit('subscribe_payment', { orderId: 42 });
+
+socket.on('payment:pending', ({ qrCode, paymentUrl }) => {
+  // Show QR code image or redirect to payment URL
+  showQr(qrCode);
+});
+
+socket.on('payment:success', () => {
+  // Payment confirmed — navigate to order confirmation page
+  router.push('/orders/42/confirmed');
+});
+
+socket.on('payment:failed', ({ status }) => {
+  // Show error state
+  showError(`Payment ${status}`);
+});
 ```
-PENDING
-  ├─ CONFIRMED    (admin/staff action)
-  │     ├─ SHIPPED
-  │     │     └─ DELIVERED
-  │     │           └─ REFUNDED  (admin action)
-  │     ├─ CANCELLED  (+ stock restored)
-  │     └─ REFUNDED
-  └─ CANCELLED    (customer or admin — stock restored)
-```
 
-### Abandoned Order Scheduler
+### Server-side room naming
 
-`OrderScheduler` runs every **5 minutes** (via `@nestjs/schedule`). It finds all `PENDING` orders older than **30 minutes**, restores their stock, and marks them `CANCELLED`. This prevents indefinitely reserved stock from abandoned checkouts.
+Each order gets its own room: `payment:{orderId}`. Only clients that have called `subscribe_payment` with that `orderId` receive its events.
 
 ---
 
@@ -964,205 +561,140 @@ PENDING
 
 ### Success
 
-All successful responses are wrapped by `TransformInterceptor`:
-
 ```json
 {
   "success": true,
   "statusCode": 200,
   "data": { ... },
-  "timestamp": "2026-05-08T10:00:00.000Z"
+  "timestamp": "2026-05-19T04:10:00.000Z"
 }
 ```
 
 ### Error
-
-All errors are caught by `AllExceptionsFilter`:
 
 ```json
 {
   "success": false,
   "statusCode": 400,
   "message": "Validation failed",
-  "errors": ["email must be an email", "password must be a string"],
-  "timestamp": "2026-05-08T10:00:00.000Z",
-  "path": "/v1/user"
+  "errors": ["email must be an email"],
+  "timestamp": "2026-05-19T04:10:00.000Z",
+  "path": "/v1/auth/register"
 }
 ```
-
-### Prisma error mapping
-
-| Prisma code | HTTP status | Meaning |
-|-------------|-------------|---------|
-| `P2002` | `409 Conflict` | Unique constraint violation |
-| `P2025` | `404 Not Found` | Record not found |
-| `P2003` | `400 Bad Request` | Foreign key constraint failure |
-| `P2014` | `400 Bad Request` | Relation violation |
-| `PrismaClientValidationError` | `400 Bad Request` | Missing or invalid field |
-| Unknown | `500 Internal Server Error` | Unexpected error |
 
 ---
 
 ## Authentication & Authorization
 
-The flow on every request:
+See [PERMISSIONS.md](./PERMISSIONS.md) for full details.
 
-```
-1. PermissionValMiddleware (runs first on all routes)
-   └─ Attaches PermissionVal to req.permissionsVal
-   └─ Stores request in AsyncLocalStorage
+### Quick summary
 
-2. AuthGuard (global APP_GUARD)
-   ├─ If @Public() → allow immediately
-   ├─ Extract Bearer token from Authorization header
-   ├─ Verify JWT → attach req.user = { sub, username, permissions[] }
-   ├─ If no @Permissions() on route → authenticated user is allowed
-   ├─ If user.permissions includes "*" → admin, allow all
-   └─ Otherwise: user must have ALL permissions listed in @Permissions()
+- All routes require a valid JWT except those decorated with `@Public()`
+- Customer routes check only JWT (no permission strings)
+- Admin/Staff routes use `@Permissions('resource:action')` — permissions come from the role stored in JWT
+- A role with `permissions: ["*"]` bypasses all permission checks
 
-3. Route Handler
-```
+### Public routes
 
-### JWT payload
-
-```json
-{
-  "sub": 1,
-  "username": "alice",
-  "userType": "ADMIN",
-  "permissions": ["user:read", "role:read"]
-}
-```
-
-- `userType` — always present; one of `ADMIN`, `STAFF`, `CUSTOMER`.
-- `permissions` — loaded from the user's role at login time. Empty array `[]` for `CUSTOMER` users (no RBAC).
-- Use `"permissions": ["*"]` on a role to grant full admin access.
-
-### User type rules
-
-| `userType` | Login endpoint | RBAC | Self-register |
-|-----------|---------------|------|---------------|
-| `CUSTOMER` | `POST /auth/login` | ✗ | ✅ |
-| `STAFF` | `POST /auth/admin/login` | ✅ | ✗ |
-| `ADMIN` | `POST /auth/admin/login` | ✅ | ✗ |
+| Method | Path |
+|--------|------|
+| `POST` | `/v1/auth/login` |
+| `POST` | `/v1/auth/admin/login` |
+| `POST` | `/v1/auth/register` |
+| `GET` | `/v1/products` |
+| `GET` | `/v1/products/:id` |
+| `GET` | `/v1/categories` |
+| `GET` | `/v1/categories/:id` |
+| `POST` | `/v1/payments/webhook/:provider` |
 
 ---
 
 ## Global Providers
 
-Registered in `AppModule`:
-
-| Token | Class | Scope |
-|-------|-------|-------|
-| `APP_FILTER` | `AllExceptionsFilter` | Catches all unhandled exceptions |
-| `APP_GUARD` | `AuthGuard` | JWT verification + RBAC enforcement |
-| `APP_INTERCEPTOR` | `TransformInterceptor` | Wraps successful responses |
-| `APP_INTERCEPTOR` | `AuditLogInterceptor` | Persists every request to `audit_logs` |
-
-`AuditLogInterceptor` automatically:
-- Captures HTTP method, URL, user ID, IP, user agent
-- Sanitises sensitive fields: `password`, `token`, `secret`, `accessToken` → `[REDACTED]`
-- Records both the request payload and the response body
-- Still logs on errors (captures the error status + message)
+| Provider | Scope | Description |
+|----------|-------|-------------|
+| `AuthGuard` | `APP_GUARD` | JWT verification + RBAC permission check on every route |
+| `TransformInterceptor` | `APP_INTERCEPTOR` | Wraps all responses in `{ success, statusCode, data, timestamp }` |
+| `AuditLogInterceptor` | `APP_INTERCEPTOR` | Writes every request/response to `audit_logs` table |
+| `AllExceptionsFilter` | `APP_FILTER` | Catches all exceptions and returns structured error responses |
+| `PermissionValMiddleware` | Middleware (`*`) | Attaches `PermissionVal` and `AsyncLocalStorage` context to every request |
 
 ---
 
 ## Data Layer — Queries & Repositories
 
-The codebase separates reads from writes:
+Every Prisma model has a dedicated **Queries** class (reads) and **Repository** class (writes), both extending `BaseRepository`. All are provided and exported from `SharedModule`.
 
-| Class | Purpose |
-|-------|---------|
-| `UserQueries` | `find`, `findOne`, `count` |
-| `UserRepository` | `create`, `update`, `delete` |
-| `RoleQueries` | `find`, `findOne`, `findUnique`, `count` |
-| `RoleRepository` | `create`, `update`, `delete` |
-| `AuditLogQueries` | `find`, `count` |
-| `AuditLogRepository` | `create` |
-| `CategoryQueries` | `find`, `findOne`, `findUnique`, `count` |
-| `CategoryRepository` | `create`, `update`, `delete` |
-| `ProductQueries` | `find`, `findOne`, `findUnique`, `count` |
-| `ProductRepository` | `create`, `update`, `delete` |
-| `CustomerProfileQueries` | `findOne`, `findUnique` |
-| `CustomerProfileRepository` | `create`, `update`, `upsert` |
-| `CartQueries` | `find`, `findOne`, `findUnique`, `count` |
-| `CartRepository` | `create`, `update`, `upsert`, `delete` |
-| `CartItemQueries` | `find`, `findOne`, `findUnique` |
-| `CartItemRepository` | `create`, `update`, `upsert`, `delete`, `updateMany`, `deleteMany` |
-| `OrderQueries` | `find`, `findOne`, `findUnique`, `count` |
-| `OrderRepository` | `create`, `update`, `updateMany`, `delete` |
+| Model | Queries | Repository |
+|-------|---------|-----------|
+| User | `UserQueries` | `UserRepository` |
+| Role | `RoleQueries` | `RoleRepository` |
+| AuditLog | `AuditLogQueries` | `AuditLogRepository` |
+| Category | `CategoryQueries` | `CategoryRepository` |
+| Product | `ProductQueries` | `ProductRepository` |
+| CustomerProfile | `CustomerProfileQueries` | `CustomerProfileRepository` |
+| Cart | `CartQueries` | `CartRepository` |
+| CartItem | `CartItemQueries` | `CartItemRepository` |
+| Order | `OrderQueries` | `OrderRepository` |
+| PaymentTransaction | `PaymentTransactionQueries` | `PaymentTransactionRepository` |
 
-All classes extend `BaseQueries` / `BaseRepository` from `src/common/bases/`.
-
-`PrismaService` extends `PrismaClient` and adds middleware that automatically sets `createdBy` / `updatedBy` fields (if present on the model) from the current request context via `AsyncLocalStorage`.
+`BaseRepository.joinTransaction(tx)` returns a new instance of the repository bound to a Prisma transaction client — use this inside `prisma.$transaction()` for atomic multi-step writes.
 
 ---
 
 ## Running the Application
 
-### Prerequisites
-
-- Node.js 22+
-- PostgreSQL 16+
-- Copy `.env.example` → `.env` and set values
-
-### Development
+### Local development
 
 ```bash
 # Install dependencies
 npm install
 
-# Run database migrations
+# Copy env file
+cp .env.example .env
+
+# Run DB migrations
 npx prisma migrate dev
 
-# Start in watch mode
+# Start dev server (watch mode)
 npm run start:dev
 ```
 
-### Production
+### Production build
 
 ```bash
 npm run build
-npx prisma migrate deploy
 npm run start:prod
-```
-
-### Tests
-
-```bash
-npm test               # unit tests
-npm run test:cov       # with coverage
-npm run test:e2e       # end-to-end tests
 ```
 
 ---
 
 ## Docker
 
-### docker compose (recommended)
-
 ```bash
-# Start postgres + app
-docker compose up --build -d
+# Start all services (postgres + app + ngrok)
+docker compose up -d
 
-# View logs
-docker compose logs -f app
+# Rebuild image after code changes
+docker compose up -d --build
 
-# Stop
-docker compose down
+# View app logs
+docker logs nestjs_app -f
+
+# Run migrations inside container (manual)
+docker exec nestjs_app npx prisma migrate deploy
 ```
 
-The `app` service will:
-1. Wait for Postgres to pass its healthcheck
-2. Run `prisma migrate deploy` on startup
-3. Start the NestJS server on port 3000
+**Services:**
 
-### Build image only
+| Service | Port | Description |
+|---------|------|-------------|
+| `nestjs_app` | `3000` | NestJS application |
+| `nestjs_postgres` | `5432` | PostgreSQL database |
+| `ngrok` | `4040` | Tunnel — inspect at `http://localhost:4040` |
 
-```bash
-docker build -t nestjs-app .
-```
+The `nestjs_app` container runs `prisma migrate deploy` automatically on startup before `node dist/main`.
 
-The [Dockerfile](../Dockerfile) uses a two-stage build:
-- **Stage 1 (builder):** installs all deps → `prisma generate` → `npm run build`
-- **Stage 2 (production):** installs prod-only deps, copies `dist/` + `prisma/` → runs on startup
+
